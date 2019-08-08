@@ -1,0 +1,8 @@
+include ':app'
+include ':devbricks'
+include ':annotations'
+include ':devbricks-processors'
+
+project(':devbricks').projectDir = new File("$rootDir/../../devbricks/")
+project(':annotations').projectDir = new File("$rootDir/../annotations/")
+project(':devbricks-processors').projectDir = new File("$rootDir/../processors/")

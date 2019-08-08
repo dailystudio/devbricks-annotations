@@ -1,0 +1,4 @@
+include ':'
+include ':annotations'
+
+project(':annotations').projectDir = new File("$rootDir/../annotations/")
