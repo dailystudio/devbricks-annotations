@@ -4,6 +4,7 @@ import androidx.annotation.Keep;
 import com.dailystudio.annotation.DBColumn;
 import com.dailystudio.annotation.DBObject;
 import com.dailystudio.annotation.processor.database.ColumnSpecs;
+import com.dailystudio.annotation.processor.utils.GenUtils;
 import com.squareup.javapoet.*;
 
 import javax.annotation.processing.*;
@@ -92,6 +93,8 @@ public class DBObjectProcessor extends BaseProcessor {
                         columnSpecs = ColumnSpecs.fromVariableElement(varElement);
                         if (ColumnSpecs.isValidSpecs(columnSpecs)) {
                             classBuilder.addField(columnSpecs.fieldSpec);
+                            classBuilder.addMethod(columnSpecs.setterMethodSpec);
+                            classBuilder.addMethod(columnSpecs.getterMethodSpec);
 
                             List<FieldSpec> specs;
                             if (fieldsMap.containsKey(columnSpecs.version)) {

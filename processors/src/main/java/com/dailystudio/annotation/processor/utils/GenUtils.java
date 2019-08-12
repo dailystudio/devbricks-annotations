@@ -1,4 +1,4 @@
-package com.dailystudio.annotation.processor;
+package com.dailystudio.annotation.processor.utils;
 
 public class GenUtils {
 

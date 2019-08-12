@@ -5,6 +5,7 @@ import com.dailystudio.annotation.processor.utils.LogUtils;
 import com.squareup.javapoet.ClassName;
 import com.squareup.javapoet.FieldSpec;
 import com.squareup.javapoet.MethodSpec;
+import com.squareup.javapoet.TypeName;
 
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.VariableElement;
@@ -44,10 +45,86 @@ public class ColumnSpecs {
 
         specs.version = dbColumn.version();
         specs.fieldSpec = composeColumnField(varName, varTypeName, dbColumn);
+        if (specs.fieldSpec == null) {
+            return specs;
+        }
+
+        specs.setterMethodSpec = composeColumnSetterMethod(varName, varTypeName,
+                specs.fieldSpec.name);
+
+        specs.getterMethodSpec = composeColumnGetterMethod(varName, varTypeName,
+                specs.fieldSpec.name);
 
         return specs;
     }
 
+    private static MethodSpec composeColumnSetterMethod(String varName,
+                                                        String varType,
+                                                        String colName) {
+        if (varName == null || varName.isEmpty()
+                || varType == null || varType.isEmpty()
+                || colName == null || colName.isEmpty()) {
+            return null;
+        }
+
+        String setterName = varNameToMethodName(varName, CommonVariables.SETTER_PREFIX);
+        LogUtils.debug("dbfield: setter name = %s", setterName);
+        String paramName = varNameToParameterName(varName);
+        LogUtils.debug("dbfield: parameter name = %s", paramName);
+
+        TypeName paramTypeName = getParamOrReturnTypeNameByType(varType);
+        if (paramTypeName == null) {
+            return null;
+        }
+
+        MethodSpec.Builder builder = MethodSpec.methodBuilder(setterName)
+                .addParameter(paramTypeName, paramName)
+                .addModifiers(Modifier.PUBLIC);
+
+        if (paramTypeName == TypeName.BOOLEAN) {
+            builder.addStatement("setValue($L, ($L ? 1 : 0))", colName, paramName);
+        } else {
+            builder.addStatement("setValue($L, $L)", colName, paramName);
+        }
+
+        return builder.build();
+    }
+
+    private static MethodSpec composeColumnGetterMethod(String varName,
+                                                        String varType,
+                                                        String colName) {
+        if (varName == null || varName.isEmpty()
+                || varType == null || varType.isEmpty()
+                || colName == null || colName.isEmpty()) {
+            return null;
+        }
+
+        String setterName = varNameToMethodName(varName, CommonVariables.GETTER_PREFIX);
+        LogUtils.debug("dbfield: getter name = %s", setterName);
+
+        TypeName returnTypeName = getParamOrReturnTypeNameByType(varType);
+        if (returnTypeName == null) {
+            return null;
+        }
+
+        String getValueFuncName = getGetValueFunctionNameByType(varType);
+        if (getValueFuncName == null || getValueFuncName.isEmpty()) {
+            return null;
+        }
+        LogUtils.debug("dbfield: getter value func = %s", getValueFuncName);
+
+        MethodSpec.Builder builder = MethodSpec.methodBuilder(setterName)
+                .returns(returnTypeName)
+                .addModifiers(Modifier.PUBLIC);
+
+        if (returnTypeName == TypeName.BOOLEAN) {
+            builder.addStatement("return ($L($L) == 1)", getValueFuncName, colName);
+        } else {
+            builder.addStatement("return $L($L)", getValueFuncName, colName);
+        }
+
+        return builder.build();
+    }
 
     private static FieldSpec composeColumnField(String varName,
                                                 String varType,
@@ -59,11 +136,7 @@ public class ColumnSpecs {
 
         String colName = dbColumn.name();
         if (colName == null || colName.isEmpty()) {
-            colName = varName.replaceAll("([A-Z])", "_$1").toLowerCase();
-
-            if (colName.startsWith("m_") || colName.startsWith("s_")) {
-                colName = colName.substring(2);
-            }
+            colName = varNameToColumnName(varName);
         }
 
         boolean allowNull = false;
@@ -96,8 +169,8 @@ public class ColumnSpecs {
 
         String fieldNameSuffix = colName.toUpperCase();
 
-        ClassName colClassName = getColumnClassNameByType(varType);
-        if (colClassName == null) {
+        TypeName colTypeName = getColumnTypeNameByType(varType);
+        if (colTypeName == null) {
             return null;
         }
 
@@ -107,12 +180,80 @@ public class ColumnSpecs {
                 Modifier.STATIC,
                 Modifier.PUBLIC)
                 .initializer("new $T($S, $L, $L, $L)",
-                        colClassName, colName, allowNull, primary, version)
+                        colTypeName, colName, allowNull, primary, version)
                 .build();
     }
 
 
-    private static ClassName getColumnClassNameByType(String varType) {
+    private static String getGetValueFunctionNameByType(String varType) {
+        if (varType == null || varType.isEmpty()) {
+            return null;
+        }
+
+        String funcName = null;
+        switch (varType.toLowerCase()) {
+            case "int":
+            case "boolean":
+                funcName = "getIntegerValue";
+                break;
+
+            case "java.lang.string":
+                funcName = "getTextValue";
+                break;
+
+            case "long":
+                funcName = "getLongValue";
+                break;
+
+            case "double":
+                funcName = "getDoubleValue";
+                break;
+
+            default:
+                LogUtils.warn("[%s] is unsupported data type. ignored!", varType);
+                break;
+        }
+
+        return funcName;
+    }
+
+
+    private static TypeName getParamOrReturnTypeNameByType(String varType) {
+        if (varType == null || varType.isEmpty()) {
+            return null;
+        }
+
+        TypeName cn = null;
+        switch (varType.toLowerCase()) {
+            case "int":
+                cn = TypeName.INT;
+                break;
+
+            case "boolean":
+                cn = TypeName.BOOLEAN;
+                break;
+
+            case "java.lang.string":
+                cn = ClassName.get("java.lang", "String");
+                break;
+
+            case "long":
+                cn = TypeName.LONG;
+                break;
+
+            case "double":
+                cn = TypeName.DOUBLE;
+                break;
+
+            default:
+                LogUtils.warn("[%s] is unsupported data type. ignored!", varType);
+                break;
+        }
+
+        return cn;
+    }
+
+    private static TypeName getColumnTypeNameByType(String varType) {
         if (varType == null || varType.isEmpty()) {
             return null;
         }
@@ -148,15 +289,66 @@ public class ColumnSpecs {
         return ClassName.get(CommonVariables.DATABASE_OBJECT_PACKAGE, colClassName);
     }
 
+    private static String varNameToColumnName(String varName) {
+        if (varName == null || varName.isEmpty()) {
+            return varName;
+        }
+
+        String colName = varName.replaceAll("([A-Z])", "_$1").toLowerCase();
+
+        if (colName.startsWith("m_") || colName.startsWith("s_")) {
+            colName = colName.substring(2);
+        }
+
+        return colName;
+    }
+
+    private static String varNameToMethodName(String varName, String methodPrefix) {
+        if (varName == null || varName.isEmpty()) {
+            return varName;
+        }
+
+        StringBuilder builder = new StringBuilder(methodPrefix);
+
+        String methodName = varName;
+        if (varName.startsWith("m") || varName.startsWith("s")) {
+            methodName = methodName.substring(1);
+        }
+
+        builder.append(Character.toUpperCase(methodName.charAt(0)));
+        builder.append(methodName.substring(1));
+
+        return builder.toString();
+    }
+
+    private static String varNameToParameterName(String varName) {
+        if (varName == null || varName.isEmpty()) {
+            return varName;
+        }
+
+        StringBuilder builder = new StringBuilder();
+
+        String paramName = varName;
+        if (varName.startsWith("m") || varName.startsWith("s")) {
+            paramName = paramName.substring(1);
+        }
+
+        builder.append(Character.toLowerCase(paramName.charAt(0)));
+        builder.append(paramName.substring(1));
+
+        return builder.toString();
+    }
+
+
     public static boolean isValidSpecs(ColumnSpecs specs) {
         if (specs == null) {
             return false;
         }
 
-        return (specs.fieldSpec != null);
-//        return (specs.fieldSpec != null
-//                && specs.setterMethodSpec != null
-//                && specs.getterMethodSpec != null);
+//        return (specs.fieldSpec != null);
+        return (specs.fieldSpec != null
+                && specs.setterMethodSpec != null
+                && specs.getterMethodSpec != null);
     }
 
 }
