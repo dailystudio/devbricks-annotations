@@ -82,6 +82,9 @@ dependencies {
     testImplementation 'junit:junit:4.12'
     androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.2'
 
-    implementation project(':devbricks')
-    annotationProcessor project(':devbricks-processors')
+    debugImplementation project(':devbricks')
+    debugAnnotationProcessor project(':devbricks-processors')
+
+    releaseImplementation "com.github.dailystudio:devbricks:1.2.2"
+    releaseAnnotationProcessor "com.github.dailystudio:devbricks-annotations-processor:0.1.0"
 }
