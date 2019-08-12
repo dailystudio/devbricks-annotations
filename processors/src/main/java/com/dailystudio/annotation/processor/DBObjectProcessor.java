@@ -3,25 +3,23 @@ package com.dailystudio.annotation.processor;
 import androidx.annotation.Keep;
 import com.dailystudio.annotation.DBColumn;
 import com.dailystudio.annotation.DBObject;
+import com.dailystudio.annotation.processor.database.ColumnSpecs;
 import com.squareup.javapoet.*;
 
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.*;
-import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
-import javax.tools.Diagnostic;
 import java.io.IOException;
 import java.util.*;
 
-public class DBObjectProcessor extends AbstractProcessor {
+public class DBObjectProcessor extends BaseProcessor {
 
     private final static String DATABASE_OBJECT_PACKAGE = "com.dailystudio.dataobject";
     private final static int DEFAULT_VERSION = 0x1;
 
     private Filer mFiler;
     private Elements mElementUtils;
-    private Messager mMessager;
 
 
     @Override
@@ -29,7 +27,6 @@ public class DBObjectProcessor extends AbstractProcessor {
         super.init(processingEnv);
 
         mFiler = processingEnv.getFiler();
-        mMessager = processingEnv.getMessager();
         mElementUtils = processingEnv.getElementUtils();
     }
 
@@ -87,38 +84,24 @@ public class DBObjectProcessor extends AbstractProcessor {
                 note("dbobject: sub-elements = %s", subElements);
 
                 Map<Integer, List<FieldSpec>> fieldsMap = new HashMap<>();
-                FieldSpec fieldSpec;
+                ColumnSpecs columnSpecs;
                 for (Element subElement: subElements) {
                     if (subElement instanceof VariableElement) {
                         varElement = (VariableElement) subElement;
 
-                        String varName = varElement.getSimpleName().toString();
-                        DBColumn dbColumn = varElement.getAnnotation(DBColumn.class);
-                        if (dbColumn == null) {
-                            continue;
-                        }
-
-                        TypeMirror fieldType = varElement.asType();
-                        String varTypeName = fieldType.toString();
-
-                        note("dbfield: name = %s", varName);
-                        note("dbfield: type = %s", varTypeName);
-
-                        int version = dbColumn.version();
-
-                        fieldSpec = composeColumnField(varName, varTypeName, dbColumn);
-                        if (fieldSpec != null) {
-                            classBuilder.addField(fieldSpec);
+                        columnSpecs = ColumnSpecs.fromVariableElement(varElement);
+                        if (ColumnSpecs.isValidSpecs(columnSpecs)) {
+                            classBuilder.addField(columnSpecs.fieldSpec);
 
                             List<FieldSpec> specs;
-                            if (fieldsMap.containsKey(version)) {
-                                specs = fieldsMap.get(version);
+                            if (fieldsMap.containsKey(columnSpecs.version)) {
+                                specs = fieldsMap.get(columnSpecs.version);
                             } else {
                                 specs = new ArrayList<>();
                             }
 
-                            specs.add(fieldSpec);
-                            fieldsMap.put(dbColumn.version(), specs);
+                            specs.add(columnSpecs.fieldSpec);
+                            fieldsMap.put(columnSpecs.version, specs);
                         }
                     }
                 }
@@ -248,104 +231,6 @@ public class DBObjectProcessor extends AbstractProcessor {
         return columnsFields;
     }
 
-    private FieldSpec composeColumnField(String varName,
-                                         String varType,
-                                         DBColumn dbColumn) {
-        if (varName == null || varName.isEmpty()
-                || varType == null || varType.isEmpty()) {
-            return null;
-        }
-
-        String colName = dbColumn.name();
-        if (colName == null || colName.isEmpty()) {
-            colName = varName.replaceAll("([A-Z])", "_$1").toLowerCase();
-
-            if (colName.startsWith("m_") || colName.startsWith("s_")) {
-                colName = colName.substring(2);
-            }
-        }
-
-        boolean allowNull = false;
-        String allowNullStr = dbColumn.allowNull();
-        try {
-            allowNull = Boolean.parseBoolean(allowNullStr);
-        } catch (Exception e) {
-            warn("parse allowNull for [%s] failed: %s, use default",
-                    varName, e.toString());
-
-            allowNull = true;
-        }
-
-        boolean primary = false;
-        String primaryStr = dbColumn.primary();
-        try {
-            primary = Boolean.parseBoolean(primaryStr);
-        } catch (Exception e) {
-            warn("parse primary for [%s] failed: %s, use default",
-                    varName, e.toString());
-
-            primary = false;
-        }
-
-        if (primary) {
-            allowNull = false;
-        }
-
-        int version = dbColumn.version();
-
-        String fieldNameSuffix = colName.toUpperCase();
-
-        ClassName colClassName = getColumnClassNameByType(varType);
-        if (colClassName == null) {
-            return null;
-        }
-
-        return FieldSpec.builder(
-                ClassName.get(DATABASE_OBJECT_PACKAGE, "Column"),
-                "COLUMN_" + fieldNameSuffix,
-                Modifier.STATIC,
-                Modifier.PUBLIC)
-                .initializer("new $T($S, $L, $L, $L)",
-                        colClassName, colName, allowNull, primary, version)
-                .build();
-    }
-
-    private ClassName getColumnClassNameByType(String varType) {
-        if (varType == null || varType.isEmpty()) {
-            return null;
-        }
-
-        String colClassName = null;
-        switch (varType.toLowerCase()) {
-            case "int":
-            case "boolean":
-                colClassName = "IntegerColumn";
-                break;
-
-            case "java.lang.string":
-                colClassName = "TextColumn";
-                break;
-
-            case "long":
-                colClassName = "LongColumn";
-                break;
-
-            case "double":
-                colClassName = "DoubleColumn";
-                break;
-
-            default:
-                warn("[%s] is unsupported data type. ignored!", varType);
-                break;
-        }
-
-        if (colClassName == null) {
-            return null;
-        }
-
-        return ClassName.get(DATABASE_OBJECT_PACKAGE, colClassName);
-    }
-
     private String getVerColumnsFieldName(int version) {
         return "sColumns_Ver" + version;
     }
@@ -360,18 +245,6 @@ public class DBObjectProcessor extends AbstractProcessor {
     @Override
     public SourceVersion getSupportedSourceVersion() {
         return SourceVersion.latestSupported();
-    }
-
-    private void note(String format, Object... args) {
-        mMessager.printMessage(Diagnostic.Kind.NOTE, String.format(format, args));
-    }
-
-    private void error(String format, Object... args) {
-        mMessager.printMessage(Diagnostic.Kind.ERROR, String.format(format, args));
-    }
-
-    private void warn(String format, Object... args) {
-        mMessager.printMessage(Diagnostic.Kind.WARNING, String.format(format, args));
     }
 
 }
