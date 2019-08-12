@@ -68,6 +68,8 @@ afterEvaluate { project ->
                     }
                 }
 
+
+
                 pom.whenConfigured { pom ->
                     pom.dependencies.forEach { dep ->
                         if (dep.getVersion() == "unspecified") {

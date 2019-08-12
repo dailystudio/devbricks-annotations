@@ -19,7 +19,7 @@ dependencies {
 
     implementation 'androidx.annotation:annotation:1.0.0'
 
-    implementation project(':annotations')
+    api project(':annotations')
 }
 
 apply from: './maven_push.gradle'
